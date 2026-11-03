@@ -28,4 +28,5 @@ context small: do NOT read files in `E:\ldc bills\` unless the owner asks for it
 - `PROGRESS.md` - status and next steps (update at the end of every session).
 - `src/` - Apps Script project pushed with clasp (`clasp push` from this folder).
 - `DATA_FORMAT.md` - JSON contract the Round 1 export writes and the portal reads.
+- `tools/convert_old_payments.py` - one-off: old portal payment Excels -> `import\old-payments.json`.
 - `ROUND1_EXPORT_PROMPT.md` - text the owner pastes into the Round 1 session to build that export.

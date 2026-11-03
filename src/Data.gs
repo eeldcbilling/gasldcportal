@@ -32,13 +32,20 @@ function rootFolder_() {
 
 /** Sub folder by name; creates it only when create = true. Two folders with one name = error. */
 function subFolder_(parent, name, create) {
-  var it = parent.getFoldersByName(name);
-  if (it.hasNext()) {
-    var f = it.next();
-    if (it.hasNext()) throw new Error('Two folders named "' + name + '" in Drive - please remove one.');
-    return f;
+  var f = onlyOne_(parent.getFoldersByName(name), 'folders', name);
+  return f || (create ? parent.createFolder(name) : null);
+}
+
+/** The single item of a Drive search, skipping items in the Trash (Drive still lists those). */
+function onlyOne_(it, what, name) {
+  var found = null;
+  while (it.hasNext()) {
+    var x = it.next();
+    if (x.isTrashed()) continue;
+    if (found) throw new Error('Two ' + what + ' named "' + name + '" in Drive - please remove one.');
+    found = x;
   }
-  return create ? parent.createFolder(name) : null;
+  return found;
 }
 
 /** Walks a path like ['data', 'bills'] from the root folder. */
@@ -50,11 +57,7 @@ function folderAt_(parts, create) {
 
 /** One file by exact name inside a folder (null if missing, error if there are two). */
 function fileIn_(folder, name) {
-  var it = folder.getFilesByName(name);
-  if (!it.hasNext()) return null;
-  var f = it.next();
-  if (it.hasNext()) throw new Error('Two files named "' + name + '" in Drive - please remove one.');
-  return f;
+  return onlyOne_(folder.getFilesByName(name), 'files', name);
 }
 
 function readJsonFile_(file) {
@@ -202,6 +205,7 @@ function billFileId_(monthKey, fileName) {
     var it = folder.getFiles();
     while (it.hasNext()) {
       var f = it.next(), n = f.getName();
+      if (f.isTrashed()) continue;
       map[n] = map[n] ? 'DUPLICATE' : f.getId();
     }
     cachePut_(key, map, 3600);

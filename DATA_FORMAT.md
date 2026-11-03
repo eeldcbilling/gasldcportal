@@ -11,6 +11,7 @@ Shared folder: `E:\LDC Portal Data\` (Google Drive for desktop, account eeldcbil
 | `data\bills\<mmm-yy>.json` | Round 1 export | one file per finalised month |
 | `bills\<mmm-yy>\<archive file>.pdf` | Round 1 export (copy of `archive\<mmm-yy>\`) | same names as archive |
 | `submissions\...` | **Portal only** | payments/tickets; Round 1 may read, never write |
+| `import\old-payments.json` | portal folder's `tools/convert_old_payments.py` (one-off) | old portal payments, imported once by Admin |
 
 Rules: UTF-8 JSON, no BOM. Values verbatim from the source (no trimming, no fixing). Dates ISO `yyyy-mm-dd`
 or `null` when the source cell is empty - never guessed. Amounts are numbers (rupees, as stored). Only

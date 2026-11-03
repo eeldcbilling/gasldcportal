@@ -120,4 +120,12 @@ dialog.modal::backdrop { background: rgba(9, 9, 11, .55); backdrop-filter: blur(
 @media (prefers-reduced-motion: reduce) {
   .bar, .meter > span, .new-pill, dialog.modal[open] { animation: none; }
 }
+/* Update Payment uses the full screen width (owner, 03-Nov-2026): the payments table panel stretches,
+   heading and forms stay at the normal 1120px so they remain easy to read. Phones: unchanged gutter,
+   table still scrolls inside its box. */
+main.container[data-view="payment"] { max-width: none; }
+#v-payment > :not(#p-table-panel) { width: 100%; max-width: calc(1120px - 2.5rem); margin-left: auto; margin-right: auto; }
+.tbl td.rem { min-width: 16rem; max-width: 32rem; white-space: pre-line; overflow-wrap: anywhere; }
+/* warning toast: text-safe amber (white icon on #B45309 passes AA) */
+.toast.warn .t-ico { background: #B45309; }
 </style>

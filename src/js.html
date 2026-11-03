@@ -41,10 +41,10 @@ var UI = (function () {
     const box = $('#toasts');
     const t = document.createElement('div');
     t.className = 'toast ' + kind;
-    t.innerHTML = `<span class="t-ico">${ico(kind === 'ok' ? 'check' : kind === 'err' ? 'x' : 'info')}</span>
+    t.innerHTML = `<span class="t-ico">${ico(kind === 'ok' ? 'check' : kind === 'err' ? 'x' : kind === 'warn' ? 'alert' : 'info')}</span>
       <div><b>${esc(title)}</b>${text ? esc(text) : ''}</div>`;
     box.appendChild(t);
-    setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 220); }, kind === 'err' ? 6000 : 3400);
+    setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 220); }, kind === 'err' || kind === 'warn' ? 6000 : 3400);
   }
 
   // Spinner on a button while a promise runs.

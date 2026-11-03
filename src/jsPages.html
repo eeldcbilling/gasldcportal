@@ -51,6 +51,7 @@
     const ok = NAV.some(n => n[0] === view) || (view === 'admin' && BOOT.admin);
     if (!ok) view = 'dashboard';
     $$('.view').forEach(v => v.classList.toggle('is-active', v.id === 'v-' + view));
+    $('#app').dataset.view = view; // lets CSS widen the Update Payment page (cssApp.html)
     $$('.nav-link[data-view]').forEach(a => { if (a.dataset.view === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
     window.scrollTo({ top: 0, behavior: reduced() ? 'auto' : 'smooth' });
     if (view === 'payment' && payTable && BOOT.ready) loadPayments();
@@ -217,8 +218,8 @@
         bills = (await consumerData(c.id)).bills;
         if (cid !== c.id) return; // another consumer was picked meanwhile
         if (!bills.length) { out.innerHTML = `<div class="empty">${ico('file')}<p>No bills on the portal for this entity yet.</p></div>`; return; }
+        // Owner 03-Nov-2026: no month is pre-selected; the consumer picks one, then the bill is shown.
         month.enable(true, 'Type or pick a month');
-        month.set(bills[0]); draw(bills[0]); // newest month shown straight away
       } catch (e) { out.innerHTML = `<div class="note">${ico('alert')}<div><p>${esc(errText(e))}</p></div></div>`; }
     });
     function draw(b) {
@@ -254,7 +255,7 @@
         { key: 'date', label: 'Payment date', text: r => dmy(r.date), sort: r => r.date },
         { key: 'amount', label: 'Amount', num: true, text: r => inr(r.amount) },
         { key: 'utr', label: 'UTR' , cls: 'mono' },
-      ].concat(BOOT.admin ? [{ key: 'remarks', label: 'Remarks' }, { key: 'id', label: 'Entry id', hidden: true }] : []),
+      ].concat(BOOT.admin ? [{ key: 'remarks', label: 'Remarks', cls: 'rem' }, { key: 'id', label: 'Entry id', hidden: true }] : []),
     });
     if (!BOOT.ready) return;
     consumerCombo($('#p-name-host'), 'p-name', c => payFor(c));
@@ -406,6 +407,8 @@
         return res;
       }
       toast('Payment logged', ` ${res.saved.length} entr${res.saved.length > 1 ? 'ies' : 'y'} saved. Ref ${res.saved.map(s => s.id).join(', ')}`);
+      // same UTR + bill logged before: saved anyway, but tell the consumer (owner, 03-Nov-2026)
+      (res.warnings || []).forEach(w => toast('Please check', ' ' + w.text, 'warn'));
       await loadPayments(res.saved.map(s => s.id));
       await payFor(c, true);
       document.getElementById('p-table-panel').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
@@ -507,6 +510,8 @@
           <span class="hint" id="a-folder-hint"></span></div>
       </div>
       <div class="form-foot" style="margin-top:0">
+        <button type="button" class="button ghost sm" id="a-import">${ico('file')} Import old payments (once)</button>
+        <button type="button" class="button ghost sm" id="a-rollback">${ico('refresh')} Roll back old import</button>
         <button type="button" class="button ghost sm" id="a-rebuild">${ico('tool')} Rebuild payment index</button>
         <button type="button" class="button ghost sm" id="a-reload">${ico('refresh')} Reload data (after an export)</button>
         <button type="button" class="button sm" id="a-save">${ico('check')} Save folder</button>
@@ -534,6 +539,24 @@
     $('#a-reload').addEventListener('click', async e => {
       try { await busy(e.currentTarget, run('adminReload')); toast('Cache cleared', ' reloading'); setTimeout(() => location.reload(), 900); }
       catch (err) { toast('Failed', ' ' + errText(err), 'err'); }
+    });
+    // one-time copy of the old portal's payments from import/old-payments.json
+    $('#a-import').addEventListener('click', () => {
+      const d = UI.modal('Import old payments', `<p>Copies the old portal payments from <b>import/old-payments.json</b> into the portal. This can be done only once; the file written is never changed afterwards.</p>
+        <div class="form-foot"><button type="button" class="button ghost sm" data-close>Cancel</button><button type="button" class="button sm" id="a-import-go">${ico('check')} Import</button></div>`);
+      $('#a-import-go', d).addEventListener('click', async e => {
+        try { const r = await busy(e.currentTarget, run('adminImportOld')); d.close(); toast('Old payments imported', ` ${r.rows} rows, ${r.linked} linked to a portal bill - reloading`); setTimeout(() => location.reload(), 1500); }
+        catch (err) { d.close(); toast('Not imported', ' ' + errText(err), 'err'); }
+      });
+    });
+    // undo the import: only the old portal payments go (to Drive Trash); new portal payments stay
+    $('#a-rollback').addEventListener('click', () => {
+      const d = UI.modal('Roll back old import', `<p>Removes <b>only the imported old portal payments</b> (file goes to the Drive Trash, recoverable for 30 days). Payments submitted on this portal, bills and settings stay as they are. You can import again afterwards.</p>
+        <div class="form-foot"><button type="button" class="button ghost sm" data-close>Cancel</button><button type="button" class="button sm" id="a-rollback-go">${ico('check')} Roll back</button></div>`);
+      $('#a-rollback-go', d).addEventListener('click', async e => {
+        try { const n = await busy(e.currentTarget, run('adminRollbackOld')); d.close(); toast('Old import rolled back', ` ${n} rows removed - reloading`); setTimeout(() => location.reload(), 1500); }
+        catch (err) { d.close(); toast('Not rolled back', ' ' + errText(err), 'err'); }
+      });
     });
     $('#a-rebuild').addEventListener('click', async e => {
       try { const n = await busy(e.currentTarget, run('adminRebuildIndexes')); toast('Index rebuilt', ` ${n} payments`); loadAdmin(); }

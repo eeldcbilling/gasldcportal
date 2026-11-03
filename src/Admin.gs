@@ -52,3 +52,19 @@ function adminRebuildIndexes() {
   if (!lock.tryLock(30000)) throw new Error('Busy - try again.');
   try { return rebuildIndexes_(); } finally { lock.releaseLock(); }
 }
+
+/** One-time copy of the old portal's payments (see importOldPayments_ in Payments.gs). */
+function adminImportOld() {
+  requireAdmin_();
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Busy - try again.');
+  try { return importOldPayments_(); } finally { lock.releaseLock(); }
+}
+
+/** Removes the imported old payments again, so they can be imported afresh. */
+function adminRollbackOld() {
+  requireAdmin_();
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Busy - try again.');
+  try { return rollbackOldPayments_(); } finally { lock.releaseLock(); }
+}

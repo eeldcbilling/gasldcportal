@@ -36,14 +36,32 @@ Last updated: 03-Nov-2026.
   on request - only the HEAD (test) deployment exists. Public deployment: create ONE later, update it in place.
 - 02-Nov-2026: owner is now building the export in the Round 1 session, using `ROUND1_EXPORT_PROMPT.md`.
 
+- 03-Nov-2026: export Aug-26 (453 bills) + Jul-26 (446) checked against DATA_FORMAT.md: 0 errors (455
+  consumers, all bill consumers found, every `file` present, PDFs 0.56-0.64 MB, no nulls, all dates = month
+  dates). `total` = `taxable` on every bill although 715 bills have rebate/surcharge - owner: **parked for
+  now** (03-Nov-2026), raise again later (status paid/part/unpaid uses `total`).
+- 03-Nov-2026: Download Bill no longer pre-selects the newest month (owner); pushed.
+- 03-Nov-2026: owner set the data folder ID in Admin Panel and tested on the test URL with real data:
+  Admin menu shows, bill view/download and payments CSV download **work**. Phone width OK. Owner made a
+  public deployment (link to be given later). Raise Ticket parked by owner.
+- 03-Nov-2026: duplicate UTR + bill now saved with an amber warning toast (owner); pushed, not yet tested.
+- 03-Nov-2026: old portal payments: `tools/convert_old_payments.py` read 9 Excel files (1,157 rows) ->
+  `E:\LDC Portal Data\import\old-payments.json`: 1,150 rows (7 exact repeats dropped), 1,147 entity
+  matched, 219 linked to Jul/Aug-26 bills, 12 rows in `old payments excel\review.csv`. Admin button
+  "Import old payments (once)" writes `submissions\old-portal\index.json`; tested locally with mocks; pushed.
+- 03-Nov-2026: Admin "Roll back old import" (owner): moves only that index.json to Drive Trash; portal
+  payments, bills, settings untouched; import works again after it. Drive lookups now skip trashed
+  files/folders (Drive lists them). Mock test import -> rollback -> import OK; pushed.
+- 03-Nov-2026: Update Payment page: payments table panel uses the full screen width (owner); heading/forms
+  stay 1120px; remarks wrap (admin column). Phones unchanged. Pushed, owner to check.
+
 ## Next
-0. When the owner returns: check `E:\LDC Portal Data\data\` against DATA_FORMAT.md, then test the portal.
-1. Owner: open test URL as eeldcbilling (authorise Drive on first open), Admin Panel > paste folder ID of
-   `LDC Portal Data` > Save. Check that the Admin menu shows (Session.getActiveUser) - **verify also on the
-   public deployment later**: admin must be detected there too, consumers must not see it.
-2. Round 1 session builds the export (prompt: `ROUND1_EXPORT_PROMPT.md`; due-date source is open there). Until then pages
-   say "Bill data is not available yet".
-3. To test with real data: PDF view (new tab via blob) and download inside the Apps Script iframe; whether
-   files the portal writes into the Computers-synced folder come down to the PC.
-4. Open: dashboard hero mini-bill sample figures (keep/change?); CIN/PAN/GSTIN/address correct?; Raise Ticket;
-   further admin features (8.9); 8.8, 8.11.
+0. Owner: look at `old payments excel\review.csv` (12 rows), then Admin > "Import old payments (once)";
+   check Update Payment table (now full width) / Billing History / dashboard. Rollback button if wrong.
+1. Owner: test duplicate UTR + bill warning; test that a payment the portal writes into `submissions\` comes
+   down to the PC (Computers-synced folder).
+2. Public deployment exists (owner, link to come): update it in place after testing; verify admin is
+   detected there and consumers do not see Admin.
+3. Parked by owner: total = taxable on every bill; Raise Ticket.
+4. Open: Jan-26 old payments file?; old tickets (8.8); dashboard hero mini-bill sample figures; CIN/PAN/GSTIN/
+   address correct?; further admin features (8.9); 8.11; widen Billing History too?

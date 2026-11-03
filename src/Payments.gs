@@ -4,7 +4,17 @@
  *   submissions/<yyyy-mm>/P-<id>.json   one file per payment, never changed after it is written
  *   submissions/<yyyy-mm>/index.json    list of that month's payments (rebuildable from the P- files)
  * <yyyy-mm> = month the payment was submitted (India time).
+ *   submissions/old-portal/index.json  payments copied once from the old portal (Admin > Import old payments);
+ *                                      written once, never changed. Rows without a portal bill have month null.
  */
+
+var OLD_FOLDER = 'old-portal';
+
+/** Sorts payments by submission time; old rows without a time come first. */
+function byTs_(a, b) {
+  var x = a.ts || '', y = b.ts || '';
+  return x < y ? -1 : x > y ? 1 : 0;
+}
 
 /** All payments (full detail, server side only), oldest first. */
 function allPayments_() {
@@ -16,12 +26,13 @@ function allPayments_() {
     var it = sub.getFolders();
     while (it.hasNext()) {
       var f = it.next();
-      if (!/^\d{4}-\d{2}$/.test(f.getName())) continue;
+      if (f.isTrashed()) continue;
+      if (!/^\d{4}-\d{2}$/.test(f.getName()) && f.getName() !== OLD_FOLDER) continue;
       var idx = fileIn_(f, 'index.json');
       if (idx) rows = rows.concat(readJsonFile_(idx).rows || []);
     }
   }
-  rows.sort(function (a, b) { return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; });
+  rows.sort(byTs_);
   cachePut_('pay', rows);
   return rows;
 }
@@ -62,6 +73,7 @@ function statusOf_(total, paid) {
 /**
  * Saves one or more payments (each against one bill). All rows are checked first;
  * if any row is wrong nothing is saved and the problems are returned per row.
+ * Same UTR already logged for the same bill: saved anyway, with a warning (owner, 03-Nov-2026).
  * entries: [{ consumer, month, billNo, date: 'yyyy-mm-dd', utr, amount, remarks }]
  */
 function submitPayments(entries) {
@@ -80,7 +92,7 @@ function submitPayments(entries) {
     var names = {};
     d.consumers.forEach(function (c) { names[c.id] = c.name; });
     var today = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
-    var errors = [], clean = [];
+    var errors = [], clean = [], warnings = [];
 
     entries.forEach(function (e, i) {
       var bad = [];
@@ -101,8 +113,8 @@ function submitPayments(entries) {
       var remarks = String(e.remarks || '').trim();
       if (remarks.length > 500) bad.push('remarks are too long (max 500)');
       var k = utrKey_(utr) + '|' + e.month + '|' + e.billNo;
-      if (!bad.length && taken[k]) bad.push('this UTR is already logged for this bill');
       if (bad.length) { errors.push({ row: i, billNo: e.billNo, problems: bad }); return; }
+      if (taken[k]) warnings.push({ row: i, billNo: bill.billNo, text: 'UTR ' + utr + ' was already logged for bill ' + bill.billNo });
       taken[k] = 'new';
       clean.push({
         consumer: e.consumer, name: names[e.consumer], month: bill.month, label: bill.label,
@@ -133,7 +145,7 @@ function submitPayments(entries) {
     if (idxFile) idxFile.setContent(text); else folder.createFile('index.json', text, 'application/json');
 
     cacheDrop_('pay');
-    return { ok: true, saved: viewPayments_(saved) };
+    return { ok: true, saved: viewPayments_(saved), warnings: warnings };
   } finally {
     lock.releaseLock();
   }
@@ -146,18 +158,72 @@ function rebuildIndexes_() {
   var it = sub.getFolders();
   while (it.hasNext()) {
     var f = it.next();
-    if (!/^\d{4}-\d{2}$/.test(f.getName())) continue;
+    if (f.isTrashed() || !/^\d{4}-\d{2}$/.test(f.getName())) continue;
     var rows = [], files = f.getFiles(), idxFile = null;
     while (files.hasNext()) {
       var x = files.next();
+      if (x.isTrashed()) continue;
       if (x.getName() === 'index.json') { idxFile = x; continue; }
       if (/^P-.*\.json$/.test(x.getName())) rows.push(readJsonFile_(x));
     }
-    rows.sort(function (a, b) { return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; });
+    rows.sort(byTs_);
     var text = JSON.stringify({ month: f.getName(), rows: rows });
     if (idxFile) idxFile.setContent(text); else f.createFile('index.json', text, 'application/json');
     count += rows.length;
   }
   cacheDrop_('pay');
   return count;
+}
+
+/**
+ * Copies the old portal's payments into the portal, once (Admin > Import old payments).
+ * Reads import/old-payments.json (made on the PC by tools/convert_old_payments.py) and writes
+ * submissions/old-portal/index.json. Refuses if that file already exists (never overwritten).
+ * Every row is checked first; if any row is wrong nothing is written.
+ */
+function importOldPayments_() {
+  var folder = folderAt_(['import'], false);
+  var src = folder ? fileIn_(folder, 'old-payments.json') : null;
+  if (!src) throw new Error('import/old-payments.json not found in the data folder.');
+  var dest = folderAt_(['submissions', OLD_FOLDER], true);
+  if (fileIn_(dest, 'index.json')) throw new Error('Old payments are already imported - nothing changed.');
+
+  var data = readJsonFile_(src), rows = data.rows || [];
+  if (data.format !== 1 || !rows.length) throw new Error('old-payments.json: unknown format or no rows.');
+  var known = {};
+  base_().consumers.forEach(function (c) { known[c.id] = true; });
+  var ids = {}, errors = [];
+  rows.forEach(function (p) {
+    var bad = [];
+    if (!/^OLD-/.test(p.id) || ids[p.id]) bad.push('id missing or repeated');
+    ids[p.id] = true;
+    if (p.consumer !== null && !known[p.consumer]) bad.push('unknown consumer ' + p.consumer);
+    if (p.month !== null) {
+      var found = known[p.consumer] && consumerBills_(p.consumer).some(function (b) { return b.month === p.month && b.billNo === p.billNo; });
+      if (!found) bad.push('bill ' + p.month + ' ' + p.billNo + ' not found for this consumer');
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p.date))) bad.push('date');
+    if (!(Number(p.amount) > 0)) bad.push('amount');
+    if (bad.length) errors.push(p.id + ': ' + bad.join(', '));
+  });
+  if (errors.length) throw new Error('Nothing imported. ' + errors.length + ' row(s) wrong - ' + errors.slice(0, 5).join(' | '));
+
+  rows.sort(byTs_);
+  dest.createFile('index.json', JSON.stringify({ month: OLD_FOLDER, source: src.getName(), made: data.made, rows: rows }), 'application/json');
+  cacheDrop_('pay');
+  return { rows: rows.length, linked: rows.filter(function (p) { return p.month; }).length };
+}
+
+/**
+ * Undoes importOldPayments_ (owner, 03-Nov-2026): moves submissions/old-portal/index.json to the Drive
+ * Trash (recoverable for 30 days). Payments submitted on the portal, bills and settings are not touched.
+ */
+function rollbackOldPayments_() {
+  var dest = folderAt_(['submissions', OLD_FOLDER], false);
+  var idx = dest ? fileIn_(dest, 'index.json') : null;
+  if (!idx) throw new Error('No old payments are imported - nothing to roll back.');
+  var n = (readJsonFile_(idx).rows || []).length;
+  idx.setTrashed(true);
+  cacheDrop_('pay');
+  return n;
 }

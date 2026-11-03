@@ -1,6 +1,6 @@
 # Portal specification (Round 2)
 
-Status 02-Nov-2026: design chosen, development not started. Items marked **[OPEN]** must be decided by the
+Status 03-Nov-2026: pages built and tested with real data (see PROGRESS.md). Items marked **[OPEN]** must be decided by the
 owner before they are built (list in section 8).
 
 ## 1. Background
@@ -28,12 +28,13 @@ owner before they are built (list in section 8).
 Revised by the owner 02-Nov-2026 (built, see PROGRESS.md):
 1. **Dashboard** - hero, current-month banner (bill / dispatch / due date from the export), 4 stat cards,
    billed-vs-reported chart (12 months), insights, quick cards, recent activity (masked), bill-months timeline.
-2. **Download Bill** - only **entity name + month** (both searchable dropdowns); all bill details shown, View /
+2. **Download Bill** - only **entity name + month** (both searchable dropdowns); no month pre-selected (owner, 03-Nov-2026): bill details appear only
+   after the consumer picks a month; all bill details shown, View /
    Download PDF. No Type or Entity-type input (Bill No. = invoice no., one PDF per bill).
 3. **Update Payment** - pick entity -> **latest pending bill** card (view/download). Mode A: one payment against
    that bill. Mode B "Reconcile old bills": table of older bills, each ticked row has its own date / UTR / amount
    / remarks. Every payment is against **one bill**; same UTR may cover several bills; duplicate UTR + bill
-   blocked; if any row is wrong nothing is saved. Below: all submitted payments in a data table (select,
+   is saved with a warning (owner, 03-Nov-2026; was: blocked); if any row is wrong nothing is saved. Below: all submitted payments in a data table (select,
    sort, search, 10/20/30/all, column show/hide, CSV export).
 4. **Billing History** - pick entity -> totals, bills table (details pop-up with PDF and the payments logged
    against that bill), table of that entity's logged payments.
@@ -101,6 +102,8 @@ Google Drive for desktop (account eeldcbilling@gmail.com, **Mirror** mode) syncs
 | `bills\<month>\` PDFs | Round 1 tool / owner (PC) | Portal |
 | `data\` portal JSON (consumers, bills, amounts) | Round 1 tool export | Portal |
 | `submissions\<month>\` payments, tickets | Portal only | Round 1 tool (reconciliation) |
+| `submissions\old-portal\index.json` old portal payments | Portal only (Admin import, once) | Portal |
+| `import\old-payments.json` | PC: `tools/convert_old_payments.py` | Portal (Admin import) |
 Rules: each side writes only its own subfolders, never the other's (avoids Drive conflict copies). Portal finds
 files by name/month folder, never by a stored file ID (local saves may recreate files with new IDs); it rescans a
 month folder when it changes and caches name -> ID. Sync delay of minutes is accepted.
@@ -118,7 +121,11 @@ month folder when it changes and caches name -> ID. Sync delay of minutes is acc
 6. ~~UTR~~ **any text, at least 6 characters** (credit-note references allowed), max 100.
 7. ~~Status~~ **sum of portal payments** per bill: paid (>= total) / part / unpaid.
    Month dates: bill / dispatch / due date come from the export (Round 1 to say where due date comes from).
-8. Existing portal data (98 payments, 455 users, tickets): migrate? Where is it stored today?
+8. ~~Existing portal data~~ **Payments answered 03-Nov-2026**: owner's Excel copies (Dec-25, Feb-Sep 26, no
+   Jan) -> `tools/convert_old_payments.py` -> Admin "Import old payments" (once). All rows logged; linked to a
+   bill only when consumer + bill are on the portal, else month null / label "Old portal". Exact repeats
+   dropped. Dates: Dec/Feb/Mar files as stored, Apr-Sep swapped back (old portal swapped day/month), unless
+   the swap lands after the submission time. Doubtful rows: `old payments excel\review.csv`. Old tickets: open.
 9. Admin panel: features, and how it is protected (separate deployment with access "Only myself"?).
 10. ~~Public payments~~ masked: UTR last 4 only, no remarks (owner, 02-Nov-2026).
 11. Old months before the Round 1 archive: offered on the portal or not?
