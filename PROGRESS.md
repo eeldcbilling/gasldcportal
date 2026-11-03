@@ -1,11 +1,10 @@
 # Progress - Portal (Round 2)
 
-Last updated: 02-Nov-2026.
+Last updated: 03-Nov-2026.
 
 ## Done
 - 02-Nov-2026: folder renamed to `E:\gas ldc portal\`; GitHub repo created by owner:
-  https://github.com/eeldcbilling/gasldcportal.git (not yet linked: run `git init`, add remote, first commit
-  only when the owner asks). Owner: plan for ~600 payment entries a month; PDFs uploaded manually in one go.
+  https://github.com/eeldcbilling/gasldcportal.git (linked and first push 03-Nov-2026, branch `main`). Owner: plan for ~600 payment entries a month; PDFs uploaded manually in one go.
 - 02-Nov-2026: three layouts (Glass / Minimal / Sidebar) and five palettes were shown to the owner (samples kept
   in `E:\ldc bills\portal-design\`, not needed for development). **Owner chose Minimal + Teal & Amber** and asked
   for Material-style click ripples in the accent colour. Final static reference saved in `design/`.
@@ -47,4 +46,4 @@ Last updated: 02-Nov-2026.
 3. To test with real data: PDF view (new tab via blob) and download inside the Apps Script iframe; whether
    files the portal writes into the Computers-synced folder come down to the PC.
 4. Open: dashboard hero mini-bill sample figures (keep/change?); CIN/PAN/GSTIN/address correct?; Raise Ticket;
-   further admin features (8.9); 8.8, 8.11. Ask owner before `git init` / linking repo.
+   further admin features (8.9); 8.8, 8.11.
