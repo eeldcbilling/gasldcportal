@@ -1,0 +1,9 @@
+/* theme.css - final colours: Teal & Amber (owner choice 02-Nov-2026). Variable meaning: see comments in base.css / PORTAL_SPEC.md. */
+:root {
+  --mi-indigo: #0D9488; --mi-indigo-strong: #0F766E; --mi-violet: #F59E0B; --p-grad2: #14B8A6;
+  --p-rgb: 13, 148, 136; --a-rgb: 245, 158, 11;
+  --p-text: #0F766E; --p-text-dark: #5EEAD4; --a-text: #B45309; --a-text-dark: #FCD34D;
+  --tint: #ECF6F4; --ink: #0B2B2A; --dark-bg: #061614; --dark-solid: #0E2523;
+  --side-a: #0B2B2A; --side-b: #115E59; --side-hi: #FBBF24;
+  --blob1: #5EEAD4; --blob2: #FDE68A; --blob3: #A7F3D0;
+}

@@ -1,0 +1,576 @@
+<script>
+/* jsPages.html - the portal pages: Dashboard, Download Bill, Update Payment, Billing History, Admin.
+   Data comes from the server (Code.gs). Nothing here is sample data: if the data is not there yet,
+   the page says so. */
+(function () {
+  'use strict';
+  const { $, $$, ico, esc, inr, num, dmy, dmyt, initials, today, reduced, run, errText, flash, toast, busy } = UI;
+
+  // ---------- organisation details (same as the design header/footer) ----------
+  const ORG = {
+    name: 'U P SLDC Limited', sub: 'A U.P. Govt. Undertaking',
+    addr: 'UPSLDC Complex, Vibhuti Khand, Gomti Nagar, Lucknow - 226010',
+    cin: 'U40106UP2022SGC169330', pan: 'AADCU1676Q', gstin: '09AADCU1676QIZK',
+    mail: 'eeldcbilling@upsldc.org', web: 'www.upsldc.org',
+  };
+
+  let BOOT = { ready: false, admin: false, months: [], consumers: [] };
+  const consumerCache = {}; // id -> { bills, payments } from the server
+  async function consumerData(id, fresh) {
+    if (fresh || !consumerCache[id]) consumerCache[id] = await run('getConsumer', id);
+    return consumerCache[id];
+  }
+  const STATUS = { paid: 'Paid', part: 'Part paid', unpaid: 'Unpaid' };
+  const badge = s => `<span class="badge ${s}">${STATUS[s] || esc(s)}</span>`;
+  const outstanding = b => Math.max(0, Math.round((b.total - b.paid) * 100) / 100);
+
+  // Searchable consumer dropdown used on every page.
+  function consumerCombo(host, id, onPick) {
+    return UI.combo(host, {
+      id, label: 'consumer', placeholder: 'Type code or name, e.g. 110000093 or ACC',
+      items: () => BOOT.consumers,
+      text: c => c.name, sub: c => [c.code, c.id].filter(Boolean).join(' · '), tag: c => c.type || '',
+      avatar: c => initials(c.name), onPick,
+    });
+  }
+
+  // ---------- navigation ----------
+  const NAV = [
+    ['dashboard', 'Dashboard', 'grid'],
+    ['download', 'Download Bill', 'download'],
+    ['payment', 'Update Payment', 'card'],
+    ['history', 'Billing History', 'clock'],
+    ['ticket', 'Raise Ticket', 'message'],
+  ];
+  function renderNav() {
+    $('#nav').innerHTML = NAV.map(([k, label, i]) =>
+      `<a class="nav-link" href="#${k}" data-view="${k}">${ico(i)}<span>${label}</span></a>`).join('') +
+      (BOOT.admin ? `<a class="nav-link admin" href="#admin" data-view="admin">${ico('shield')}<span>Admin Panel</span></a>` : '');
+  }
+  function show(view) {
+    const ok = NAV.some(n => n[0] === view) || (view === 'admin' && BOOT.admin);
+    if (!ok) view = 'dashboard';
+    $$('.view').forEach(v => v.classList.toggle('is-active', v.id === 'v-' + view));
+    $$('.nav-link[data-view]').forEach(a => { if (a.dataset.view === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    window.scrollTo({ top: 0, behavior: reduced() ? 'auto' : 'smooth' });
+    if (view === 'payment' && payTable && BOOT.ready) loadPayments();
+    if (view === 'admin') loadAdmin();
+  }
+
+  // Shown on data pages while the export has not run / the folder is not set.
+  const notReady = () => `<div class="note">${ico('info')}<div><p><b>Bill data is not available yet.</b></p>
+      <p>${esc(BOOT.message || 'Please check again later.')}</p></div></div>`;
+
+  // =====================================================================
+  // Dashboard
+  // =====================================================================
+  function vDashboard() {
+    const cur = BOOT.months[0];
+    const hero = `<div class="panel hero">
+      <div class="hero-text">
+        <span class="eyebrow">${ico('zap')} LDC Billing Portal</span>
+        <h1 id="h-dash">Welcome to the UPSLDC Billing Portal</h1>
+        <p>Download your monthly LDC bill instantly, report payments and see your billing history &mdash; no login needed.</p>
+        <div class="hero-actions">
+          <a class="button" href="#download">${ico('download')} Download a bill</a>
+          <a class="button ghost" href="#payment">${ico('card')} Report a payment</a>
+        </div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="mini-bill">
+          <div class="mb-head"><span class="mb-logo">${ico('zap')}</span><span><b>Invoice 6100</b><small>Aug-26 &middot; LDC charges</small></span><span class="badge paid">Ready</span></div>
+          <i></i><i></i><i class="short"></i>
+          <div class="mb-foot"><span>Total</span><b>&#8377; 22,162</b></div>
+        </div>
+        <div class="mini-pill">${ico('zap')} Instant download</div>
+      </div>
+    </div>`;
+    const quick = `<div class="quick-grid">
+      ${[['download', 'download', 'Download Bills', 'Get your monthly LDC bill as a PDF in one click.'],
+         ['payment', 'card', 'Update Payment Info', 'Report UTR and amount against your bill.'],
+         ['history', 'clock', 'Billing History', 'All your bills, payments logged and status.'],
+         ['ticket', 'message', 'Raise Ticket', 'Need help? Send a support request to the billing section.']]
+        .map(([k, i, h, p]) => `<a class="card quick" href="#${k}"><span class="quick-ico">${ico(i)}</span><h3>${h}</h3><p>${p}</p><span class="go">Open ${ico('arrow')}</span></a>`).join('')}
+    </div>`;
+    if (!BOOT.ready || !cur) return `<section class="view stack" id="v-dashboard" aria-labelledby="h-dash">${hero}${notReady()}${quick}</section>`;
+
+    const pct = cur.billed ? Math.min(100, Math.round(cur.reported / cur.billed * 100)) : 0;
+    const last12 = BOOT.months.slice(0, 12).reverse();
+    const max = Math.max(1, ...last12.map(m => Math.max(m.billed, m.reported)));
+    const bars = last12.map((m, i) => `<div class="bar-col" title="${esc(m.label)}: billed ${inr(m.billed)}, reported ${inr(m.reported)}">
+        <div class="bar-pair"><span class="bar" style="height:${m.billed / max * 100}%;animation-delay:${i * 40}ms"></span><span class="bar rep" style="height:${m.reported / max * 100}%;animation-delay:${i * 40 + 20}ms"></span></div>
+        <small>${esc(m.label)}</small></div>`).join('');
+    const oldest = BOOT.months[BOOT.months.length - 1];
+
+    return `<section class="view stack" id="v-dashboard" aria-labelledby="h-dash">
+    ${hero}
+    <div class="panel banner" aria-label="Current billing month">
+      <div><div class="b-label">Current billing month</div><div class="b-value b-big">${esc(cur.label)}<span class="new-pill">${ico('zap')} Latest bills</span></div></div>
+      <div><div class="b-label">${ico('calendar')} Bill date</div><div class="b-value">${dmy(cur.billDate)}</div></div>
+      <div><div class="b-label">${ico('send')} Dispatch date</div><div class="b-value">${dmy(cur.dispatchDate)}</div></div>
+      <div><div class="b-label">${ico('clock')} Due date</div><div class="b-value">${dmy(cur.dueDate)}</div></div>
+    </div>
+    <div class="stats four">
+      <div class="card stat"><span class="stat-ico s-indigo">${ico('users')}</span><div><div class="stat-label">Consumers</div><div class="stat-value" data-count="${BOOT.consumers.length}">${BOOT.consumers.length}</div></div></div>
+      <div class="card stat"><span class="stat-ico s-violet">${ico('file')}</span><div><div class="stat-label">Bills ${esc(cur.label)}</div><div class="stat-value" data-count="${cur.bills}">${cur.bills}</div><div class="stat-sub">${inr(cur.billed)} billed</div></div></div>
+      <div class="card stat"><span class="stat-ico s-green">${ico('checkc')}</span><div><div class="stat-label">Payments logged</div><div class="stat-value" data-count="${BOOT.payCount}">${BOOT.payCount}</div><div class="stat-sub">${inr(BOOT.payTotal)} reported</div></div></div>
+      <div class="card stat"><span class="stat-ico s-amber">${ico('trend')}</span><div><div class="stat-label">${esc(cur.label)} reported</div><div class="stat-value">${pct}%</div><div class="stat-sub">of the amount billed</div></div></div>
+    </div>
+    <div class="insights">
+      <div class="panel"><div class="panel-head"><h3>Billed vs payments reported</h3><div class="legend"><span><i></i>Billed</span><span><i class="rep"></i>Reported</span></div></div>
+        <div class="chart"><div class="bars" role="img" aria-label="Bar chart of billed and reported amounts for the last ${last12.length} months">${bars}</div></div></div>
+      <div class="panel"><div class="panel-head"><h3>Insights</h3></div>
+        <ul class="insight-list">
+          <li><div class="row"><span>${esc(cur.label)}: reported against billed</span><b>${pct}%</b></div><div class="meter" aria-hidden="true"><span style="width:${pct}%"></span></div><small class="muted">${inr(cur.reported)} of ${inr(cur.billed)}</small></li>
+          <li><div class="row"><span>Bills with a payment logged</span><b>${BOOT.billsReported.toLocaleString('en-IN')}</b></div></li>
+          <li><div class="row"><span>Bill history on the portal</span><b>${BOOT.months.length} month${BOOT.months.length === 1 ? '' : 's'}</b></div><small class="muted">${esc(oldest.label)} to ${esc(cur.label)}</small></li>
+          <li><div class="row"><span>Data updated</span><b>${dmyt(BOOT.generated)}</b></div></li>
+        </ul></div>
+    </div>
+    ${quick}
+    <div class="insights">
+      <div class="panel"><div class="panel-head"><h3>Recent payment activity</h3><span class="muted">Last ${BOOT.recent.length} entries</span></div>
+        <ul class="activity-list">${BOOT.recent.length ? BOOT.recent.map(r => `<li class="act-row"><span class="act-avatar" aria-hidden="true">${esc(initials(r.name))}</span>
+          <div class="act-main"><div class="act-name">${esc(r.name)}</div><div class="act-meta">Bill ${esc(r.billNo)} (${esc(r.label)}) &middot; paid ${dmy(r.date)} &middot; UTR ${esc(r.utr)}</div></div>
+          <span class="act-amt">${inr(r.amount)}</span></li>`).join('') : '<li class="loading-row">No payments logged yet.</li>'}</ul></div>
+      <div class="panel"><div class="panel-head"><h3>Bill months</h3><span class="muted">Newest first</span></div>
+        <ul class="timeline">${BOOT.months.map(m => `<li><b>${esc(m.label)}</b><small>Bill ${dmy(m.billDate)} &middot; Dispatch ${dmy(m.dispatchDate)} &middot; Due ${dmy(m.dueDate)} &middot; ${m.bills} bills</small></li>`).join('')}</ul></div>
+    </div>
+  </section>`;
+  }
+  function dashboardCount() {
+    $$('#v-dashboard [data-count]').forEach(el => {
+      const end = +el.dataset.count;
+      if (reduced()) return;
+      const t0 = performance.now(), dur = 900;
+      const step = t => { const p = Math.min(1, (t - t0) / dur); el.textContent = Math.round(end * (1 - Math.pow(1 - p, 3))).toLocaleString('en-IN'); if (p < 1) requestAnimationFrame(step); };
+      requestAnimationFrame(step);
+    });
+  }
+
+  // =====================================================================
+  // Bill card (Download page, Update Payment, history pop-up)
+  // =====================================================================
+  function billDetails(b) {
+    return `<dl class="kv">
+      <div><dt>Bill no.</dt><dd>${esc(b.billNo)}</dd></div>
+      <div><dt>Month</dt><dd>${esc(b.label)}</dd></div>
+      <div><dt>Invoice date</dt><dd>${dmy(b.invoiceDate)}</dd></div>
+      <div><dt>Due date</dt><dd>${dmy(b.dueDate)}</dd></div>
+      <div><dt>Dispatch date</dt><dd>${dmy(b.dispatchDate)}</dd></div>
+      <div><dt>Nature</dt><dd>${esc(b.nature || '—')}</dd></div>
+      <div><dt>Capacity (MW)</dt><dd>${num(b.capacityMW)}</dd></div>
+      <div><dt>Taxable value</dt><dd>${inr(b.taxable)}</dd></div>
+      <div><dt>Rebate</dt><dd>${inr(b.rebate)}</dd></div>
+      <div><dt>Surcharge</dt><dd>${inr(b.surcharge)}</dd></div>
+      <div><dt>Total</dt><dd>${inr(b.total)}</dd></div>
+      <div><dt>Payment status</dt><dd>${badge(b.status)} ${b.paid ? `<small class="muted">${inr(b.paid)} reported</small>` : ''}</dd></div>
+      <div class="wide"><dt>Billing to</dt><dd>${esc(b.billingTo || '—')}</dd></div>
+      <div class="wide"><dt>Address</dt><dd>${esc(b.address || '—')}</dd></div>
+    </dl>`;
+  }
+  const pdfButtons = (cid, b) => `<div class="actions">
+      <button type="button" class="button ghost sm" data-pdf="view" data-c="${esc(cid)}" data-m="${esc(b.month)}" data-b="${esc(b.billNo)}">${ico('eye')} View</button>
+      <button type="button" class="button sm" data-pdf="download" data-c="${esc(cid)}" data-m="${esc(b.month)}" data-b="${esc(b.billNo)}">${ico('download')} Download PDF</button></div>`;
+  function billCard(cid, b, title) {
+    return `<div class="panel bill-card">
+      <div class="result"><span class="file-ico">PDF</span>
+        <div class="result-main"><small>${esc(title || 'Bill')}</small><b>${esc(b.file)}</b><small>Bill ${esc(b.billNo)} &middot; ${esc(b.label)} &middot; ${inr(b.total)}</small></div>
+        ${pdfButtons(cid, b)}</div>
+      ${billDetails(b)}</div>`;
+  }
+  // One listener for every View / Download button on the page.
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-pdf]');
+    if (b) UI.pdf(b.dataset.c, b.dataset.m, b.dataset.b, b.dataset.pdf, b);
+  });
+
+  // =====================================================================
+  // Download Bill: only consumer + month
+  // =====================================================================
+  const vDownload = () => `
+  <section class="view stack" id="v-download" aria-labelledby="h-dl">
+    <div class="page-head"><h2 id="h-dl">Download your bill</h2><p>Choose your entity and the month &mdash; all bill details appear and the PDF is ready at once.</p></div>
+    ${BOOT.ready ? `<div class="panel pad">
+      <div class="form-grid">
+        <div class="field"><label for="d-name">Entity name</label><div id="d-name-host"></div></div>
+        <div class="field"><label for="d-month">Month</label><div id="d-month-host"></div></div>
+      </div></div>
+    <div id="d-result" aria-live="polite"></div>` : notReady()}
+  </section>`;
+  function bindDownload() {
+    if (!BOOT.ready) return;
+    let cid = null, bills = [];
+    const out = $('#d-result');
+    const month = UI.combo($('#d-month-host'), {
+      id: 'd-month', label: 'month', placeholder: 'Select entity first',
+      items: () => { const seen = {}; return bills.filter(b => !seen[b.month] && (seen[b.month] = true)); },
+      text: b => b.label, sub: b => 'Bill ' + bills.filter(x => x.month === b.month).map(x => x.billNo).join(', '),
+      tag: b => STATUS[b.status], onPick: b => draw(b),
+    });
+    month.enable(false, 'Select entity first');
+    consumerCombo($('#d-name-host'), 'd-name', async c => {
+      cid = c ? c.id : null; bills = []; out.innerHTML = '';
+      month.enable(false, c ? 'Loading months…' : 'Select entity first');
+      if (!c) return;
+      try {
+        bills = (await consumerData(c.id)).bills;
+        if (cid !== c.id) return; // another consumer was picked meanwhile
+        if (!bills.length) { out.innerHTML = `<div class="empty">${ico('file')}<p>No bills on the portal for this entity yet.</p></div>`; return; }
+        month.enable(true, 'Type or pick a month');
+        month.set(bills[0]); draw(bills[0]); // newest month shown straight away
+      } catch (e) { out.innerHTML = `<div class="note">${ico('alert')}<div><p>${esc(errText(e))}</p></div></div>`; }
+    });
+    function draw(b) {
+      if (!b) { out.innerHTML = ''; return; }
+      const same = bills.filter(x => x.month === b.month);
+      out.innerHTML = '<div class="stack">' + same.map(x => billCard(cid, x, same.length > 1 ? 'One of ' + same.length + ' bills this month' : 'Your bill')).join('') + '</div>';
+    }
+  }
+
+  // =====================================================================
+  // Update Payment
+  // =====================================================================
+  const vPayment = () => `
+  <section class="view stack" id="v-payment" aria-labelledby="h-pay">
+    <div class="page-head"><h2 id="h-pay">Update payment info</h2><p>Choose your entity, then log the payment against the bill it was made for.</p></div>
+    ${BOOT.ready ? `<div class="panel pad"><div class="form-grid"><div class="field full"><label for="p-name">Entity name</label><div id="p-name-host"></div></div></div></div>
+    <div id="p-work" class="stack" aria-live="polite"></div>` : notReady()}
+    <div class="panel" id="p-table-panel">
+      <div class="panel-head"><h3>Submitted payments</h3>${BOOT.admin ? `<span class="admin-tag">${ico('shield')} Admin view: full UTR and remarks</span>` : '<span class="muted">UTR shows the last 4 characters only</span>'}</div>
+      <div id="p-table"></div></div>
+  </section>`;
+
+  let payTable = null;
+  function bindPayment() {
+    payTable = new UI.DataTable($('#p-table'), {
+      title: 'Submitted payments', exportName: 'payments', selectable: true, pageSize: 10, sortKey: 'ts', sortDir: 'desc',
+      rowId: r => r.id, emptyText: 'No payments logged yet.',
+      columns: [
+        { key: 'ts', label: 'Submitted', text: r => dmyt(r.ts), sort: r => r.ts },
+        { key: 'name', label: 'Entity', cls: 'name' },
+        { key: 'label', label: 'Bill month', sort: r => r.month + r.label },
+        { key: 'billNo', label: 'Bill no.', sort: r => Number(r.billNo) || 0 },
+        { key: 'date', label: 'Payment date', text: r => dmy(r.date), sort: r => r.date },
+        { key: 'amount', label: 'Amount', num: true, text: r => inr(r.amount) },
+        { key: 'utr', label: 'UTR' , cls: 'mono' },
+      ].concat(BOOT.admin ? [{ key: 'remarks', label: 'Remarks' }, { key: 'id', label: 'Entry id', hidden: true }] : []),
+    });
+    if (!BOOT.ready) return;
+    consumerCombo($('#p-name-host'), 'p-name', c => payFor(c));
+  }
+  async function loadPayments(flashIds) {
+    try { payTable.setRows(await run('getPayments'), flashIds); }
+    catch (e) { toast('Could not load payments', ' ' + errText(e), 'err'); }
+  }
+
+  async function payFor(c, flashMsg) {
+    const work = $('#p-work');
+    if (!c) { work.innerHTML = ''; return; }
+    work.innerHTML = '<div class="panel loading-row"><span class="spinner" aria-hidden="true"></span> Loading bills…</div>';
+    let data;
+    try { data = await consumerData(c.id, !!flashMsg); }
+    catch (e) { work.innerHTML = `<div class="note">${ico('alert')}<div><p>${esc(errText(e))}</p></div></div>`; return; }
+    const bills = data.bills;
+    if (!bills.length) { work.innerHTML = `<div class="empty">${ico('file')}<p>No bills on the portal for this entity yet.</p></div>`; return; }
+    const latest = bills.find(b => b.status !== 'paid') || bills[0]; // newest bill not fully paid
+    const older = bills.filter(b => b !== latest);
+    const pending = bills.filter(b => b.status !== 'paid');
+
+    work.innerHTML = `
+      ${billCard(c.id, latest, latest.status === 'paid' ? 'All bills reported paid - latest bill' : 'Latest pending bill')}
+      <div class="panel pad stack">
+        <div class="mode-row">
+          <div class="seg" role="group" aria-label="What do you want to log?">
+            <button type="button" aria-pressed="true" data-mode="latest">Pay bill ${esc(latest.billNo)} (${esc(latest.label)})</button>
+            <button type="button" aria-pressed="false" data-mode="old"${older.length ? '' : ' disabled'}>Reconcile old bills (${older.length})</button>
+          </div>
+          <div class="sum-strip"><span>Pending bills <b>${pending.length}</b></span><span>Outstanding <b>${inr(pending.reduce((t, b) => t + outstanding(b), 0))}</b></span></div>
+        </div>
+        <div id="p-mode"></div>
+      </div>`;
+    const modeBox = $('#p-mode');
+    const setMode = m => {
+      $$('#p-work [data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+      if (m === 'latest') latestForm(modeBox, c, latest); else oldBills(modeBox, c, older);
+    };
+    $$('#p-work [data-mode]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+    setMode('latest');
+  }
+
+  // --- one payment against the latest pending bill ---
+  function latestForm(box, c, b) {
+    const due = outstanding(b);
+    box.innerHTML = `<form class="form-grid" id="lf" novalidate>
+      <div class="field" data-f="date"><label for="lf-date">Payment date <span class="req">*</span></label><input id="lf-date" class="input" type="date" max="${today()}" required></div>
+      <div class="field" data-f="utr"><label for="lf-utr">UTR / reference no. <span class="req">*</span></label>
+        <div class="input-wrap"><input id="lf-utr" class="input mono" maxlength="100" autocomplete="off" placeholder="At least 6 characters"><span class="state" aria-hidden="true"></span></div>
+        <span class="hint" id="lf-utr-hint">Bank UTR, or credit-note reference</span></div>
+      <div class="field" data-f="amount"><label for="lf-amt">Amount paid (&#8377;) <span class="req">*</span></label><input id="lf-amt" class="input" type="number" min="0.01" step="0.01" inputmode="decimal">
+        <span class="hint" id="lf-amt-hint">Outstanding on this bill: ${inr(due)} ${due > 0 ? `&middot; <button type="button" class="link-btn" id="lf-fill">use this amount</button>` : ''}</span></div>
+      <div class="field" data-f="remarks"><label for="lf-rem">Remarks</label><input id="lf-rem" class="input" maxlength="500" placeholder="Optional"></div>
+      <div class="field full"><div class="form-foot" style="margin-top:0"><button type="submit" class="button" id="lf-submit">${ico('send')} Submit payment for bill ${esc(b.billNo)}</button></div></div>
+    </form>`;
+    const utr = $('#lf-utr'), amt = $('#lf-amt');
+    const fill = $('#lf-fill'); if (fill) fill.addEventListener('click', () => { amt.value = due; amt.dispatchEvent(new Event('input')); });
+    utr.addEventListener('input', () => {
+      const ok = utr.value.trim().length >= 6, st = $('#lf .state'), h = $('#lf-utr-hint');
+      st.className = 'state ' + (utr.value ? (ok ? 'ok' : 'bad') : ''); st.innerHTML = utr.value ? ico(ok ? 'check' : 'x') : '';
+      h.className = 'hint' + (utr.value && !ok ? ' bad' : ''); h.textContent = utr.value && !ok ? 'At least 6 characters' : 'Bank UTR, or credit-note reference';
+    });
+    amt.addEventListener('input', () => {
+      const v = Number(amt.value), h = $('#lf-amt-hint');
+      if (amt.value && due > 0 && Math.abs(v - due) > 0.005) { h.className = 'hint warn'; h.textContent = `Differs from outstanding ${inr(due)} by ${inr(Math.abs(v - due))} - part payment is allowed`; }
+      else if (amt.value && due > 0) { h.className = 'hint ok'; h.textContent = 'Matches the outstanding amount'; }
+    });
+    $('#lf').addEventListener('submit', async e => {
+      e.preventDefault();
+      const entry = { consumer: c.id, month: b.month, billNo: b.billNo, date: $('#lf-date').value, utr: utr.value.trim(), amount: Number(amt.value), remarks: $('#lf-rem').value.trim() };
+      const bad = [];
+      if (!entry.date || entry.date > today()) bad.push('date');
+      if (entry.utr.length < 6) bad.push('utr');
+      if (!(entry.amount > 0)) bad.push('amount');
+      $$('#lf .has-error').forEach(x => x.classList.remove('has-error'));
+      if (bad.length) { bad.forEach(k => { const f = $(`#lf [data-f="${k}"]`); f.classList.add('has-error'); flash(f, 'is-error'); }); toast('Please complete the form', '', 'err'); return; }
+      await send([entry], $('#lf-submit'), c);
+    });
+  }
+
+  // --- many old bills at once, each with its own date / UTR / amount / remarks ---
+  function oldBills(box, c, older) {
+    let onlyOpen = older.some(b => b.status !== 'paid');
+    const draw = () => {
+      const list = onlyOpen ? older.filter(b => b.status !== 'paid') : older;
+      box.innerHTML = `<div class="stack">
+        <div class="toolbar">
+          <label class="grow" style="display:flex;gap:.5rem;align-items:center;font-size:.9rem"><input type="checkbox" id="ob-open"${onlyOpen ? ' checked' : ''}> Show only unpaid / part-paid bills</label>
+          <span class="muted" style="font-size:.85rem">Same UTR for several bills?</span>
+          <button type="button" class="button ghost sm" id="ob-copy">Copy first ticked row's date &amp; UTR to all ticked</button>
+        </div>
+        <div class="table-wrap"><table class="tbl" id="ob-tbl"><caption class="sr">Old bills of ${esc(c.name)}</caption>
+          <thead><tr><th class="chk"><input type="checkbox" id="ob-all" aria-label="Tick all bills"></th><th>Month</th><th>Bill no.</th><th class="num">Total</th><th class="num">Reported</th><th class="num">Outstanding</th><th>Status</th><th>Payment date</th><th>UTR / reference</th><th class="num">Amount (&#8377;)</th><th>Remarks</th><th>PDF</th></tr></thead>
+          <tbody>${list.length ? list.map(b => `<tr data-k="${esc(b.month + '|' + b.billNo)}">
+            <td class="chk"><input type="checkbox" class="ob-tick" aria-label="Log payment for bill ${esc(b.billNo)}"></td>
+            <td>${esc(b.label)}</td><td>${esc(b.billNo)}</td><td class="num">${inr(b.total)}</td><td class="num">${inr(b.paid)}</td><td class="num">${inr(outstanding(b))}</td><td>${badge(b.status)}</td>
+            <td><input class="input sm date" type="date" max="${today()}" aria-label="Payment date for bill ${esc(b.billNo)}"></td>
+            <td><input class="input sm mono" maxlength="100" aria-label="UTR for bill ${esc(b.billNo)}"></td>
+            <td class="num"><input class="input sm amt" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="${outstanding(b) || ''}" aria-label="Amount for bill ${esc(b.billNo)}"></td>
+            <td><input class="input sm" maxlength="500" aria-label="Remarks for bill ${esc(b.billNo)}"></td>
+            <td><button type="button" class="icon-button" data-pdf="view" data-c="${esc(c.id)}" data-m="${esc(b.month)}" data-b="${esc(b.billNo)}" aria-label="View bill ${esc(b.billNo)}">${ico('eye')}</button></td>
+          </tr>`).join('') : '<tr><td class="empty-row" colspan="12">No unpaid old bills. Untick the filter to see all.</td></tr>'}</tbody></table></div>
+        <div class="form-foot" style="margin-top:0"><span class="muted grow" id="ob-count" style="align-self:center;font-size:.9rem">No bill ticked</span>
+          <button type="button" class="button" id="ob-submit">${ico('send')} Submit ticked bills</button></div></div>`;
+      const rows = () => $$('#ob-tbl tbody tr[data-k]');
+      const count = () => { const n = rows().filter(r => $('.ob-tick', r).checked).length; $('#ob-count').textContent = n ? `${n} bill${n > 1 ? 's' : ''} ticked` : 'No bill ticked'; };
+      $('#ob-open').addEventListener('change', e => { onlyOpen = e.target.checked; draw(); });
+      $('#ob-all').addEventListener('change', e => { rows().forEach(r => { $('.ob-tick', r).checked = e.target.checked; }); count(); });
+      // typing in a row ticks it automatically
+      $('#ob-tbl tbody').addEventListener('input', e => { const tr = e.target.closest('tr'); if (tr && !e.target.matches('.ob-tick')) { $('.ob-tick', tr).checked = true; } count(); });
+      $('#ob-tbl tbody').addEventListener('change', count);
+      $('#ob-copy').addEventListener('click', () => {
+        const t = rows().filter(r => $('.ob-tick', r).checked);
+        if (t.length < 2) { toast('Tick at least two bills first', '', 'info'); return; }
+        const [d, u] = $$('input.input', t[0]);
+        t.slice(1).forEach(r => { const x = $$('input.input', r); x[0].value = d.value; x[1].value = u.value; });
+        toast('Copied', ` date and UTR to ${t.length - 1} bill(s)`);
+      });
+      $('#ob-submit').addEventListener('click', async () => {
+        const ticked = rows().filter(r => $('.ob-tick', r).checked);
+        rows().forEach(r => { r.classList.remove('has-error'); const m = $('.row-err', r); if (m) m.remove(); });
+        if (!ticked.length) { toast('Tick at least one bill', '', 'err'); flash($('#ob-submit'), 'is-error'); return; }
+        let bad = 0;
+        const entries = ticked.map(r => {
+          const [k1, k2] = r.dataset.k.split('|'), x = $$('input.input', r);
+          const e = { consumer: c.id, month: k1, billNo: k2, date: x[0].value, utr: x[1].value.trim(), amount: Number(x[2].value), remarks: x[3].value.trim() };
+          const p = [];
+          if (!e.date || e.date > today()) p.push('payment date'); if (e.utr.length < 6) p.push('UTR (6+ characters)'); if (!(e.amount > 0)) p.push('amount');
+          if (p.length) { bad++; r.classList.add('has-error'); r.cells[2].insertAdjacentHTML('beforeend', `<span class="row-err">Missing: ${p.join(', ')}</span>`); }
+          return e;
+        });
+        if (bad) { toast('Please complete the marked rows', '', 'err'); flash($('#ob-submit'), 'is-error'); return; }
+        const res = await send(entries, $('#ob-submit'), c);
+        if (res && res.errors) res.errors.forEach(er => { const r = ticked[er.row]; r.classList.add('has-error'); r.cells[2].insertAdjacentHTML('beforeend', `<span class="row-err">${esc(er.problems.join('; '))}</span>`); });
+      });
+    };
+    draw();
+  }
+
+  // Sends entries to the server. Nothing is saved if any row is wrong (server checks everything again).
+  async function send(entries, btn, c) {
+    try {
+      const res = await busy(btn, run('submitPayments', entries), 'Saving…');
+      if (!res.ok) {
+        if (entries.length === 1) toast('Not saved', ' ' + res.errors[0].problems.join('; '), 'err');
+        else toast('Nothing saved', ` ${res.errors.length} row(s) have problems - see the table`, 'err');
+        flash(btn, 'is-error');
+        return res;
+      }
+      toast('Payment logged', ` ${res.saved.length} entr${res.saved.length > 1 ? 'ies' : 'y'} saved. Ref ${res.saved.map(s => s.id).join(', ')}`);
+      await loadPayments(res.saved.map(s => s.id));
+      await payFor(c, true);
+      document.getElementById('p-table-panel').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+      return res;
+    } catch (e) {
+      flash(btn, 'is-error'); toast('Not saved', ' ' + errText(e), 'err');
+    }
+  }
+
+  // =====================================================================
+  // Billing History
+  // =====================================================================
+  const vHistory = () => `
+  <section class="view stack" id="v-history" aria-labelledby="h-his">
+    <div class="page-head"><h2 id="h-his">Billing history</h2><p>All bills of one entity with payment status, and the payments logged on this portal.</p></div>
+    ${BOOT.ready ? `<div class="panel pad"><div class="form-grid"><div class="field full"><label for="h-name">Entity name</label><div id="h-name-host"></div></div></div></div>
+    <div id="h-out" class="stack" aria-live="polite"></div>` : notReady()}
+  </section>`;
+  function bindHistory() {
+    if (!BOOT.ready) return;
+    const out = $('#h-out');
+    let cur = null, data = null;
+    consumerCombo($('#h-name-host'), 'h-name', async c => {
+      cur = c; out.innerHTML = '';
+      if (!c) return;
+      out.innerHTML = '<div class="panel loading-row"><span class="spinner" aria-hidden="true"></span> Loading history…</div>';
+      try { data = await consumerData(c.id); } catch (e) { out.innerHTML = `<div class="note">${ico('alert')}<div><p>${esc(errText(e))}</p></div></div>`; return; }
+      if (cur !== c) return;
+      const b = data.bills, billed = b.reduce((t, x) => t + x.total, 0), paid = b.reduce((t, x) => t + Math.min(x.paid, x.total), 0);
+      out.innerHTML = `
+        <div class="stats four">
+          <div class="card stat"><span class="stat-ico s-indigo">${ico('file')}</span><div><div class="stat-label">Bills</div><div class="stat-value">${b.length}</div></div></div>
+          <div class="card stat"><span class="stat-ico s-violet">${ico('rupee')}</span><div><div class="stat-label">Total billed</div><div class="stat-value" style="font-size:1.3rem">${inr(billed)}</div></div></div>
+          <div class="card stat"><span class="stat-ico s-green">${ico('checkc')}</span><div><div class="stat-label">Reported paid</div><div class="stat-value" style="font-size:1.3rem">${inr(paid)}</div></div></div>
+          <div class="card stat"><span class="stat-ico s-red">${ico('alert')}</span><div><div class="stat-label">Outstanding</div><div class="stat-value" style="font-size:1.3rem">${inr(b.reduce((t, x) => t + outstanding(x), 0))}</div></div></div>
+        </div>
+        <div class="panel"><div class="panel-head"><h3>Bills</h3><span class="muted">Click a bill number for details</span></div><div id="h-bills"></div></div>
+        <div class="panel"><div class="panel-head"><h3>Payments you logged</h3>${BOOT.admin ? `<span class="admin-tag">${ico('shield')} Admin view</span>` : ''}</div><div id="h-pays"></div></div>`;
+      const bt = new UI.DataTable($('#h-bills'), {
+        title: 'Bills', exportName: 'bills_' + c.id, selectable: true, rowId: r => r.month + '|' + r.billNo, sortKey: 'ym', sortDir: 'desc',
+        columns: [
+          { key: 'ym', label: 'Month', text: r => r.label, sort: r => r.ym },
+          { key: 'billNo', label: 'Bill no.', html: r => `<button type="button" class="link-btn" data-detail="${esc(r.month + '|' + r.billNo)}">${esc(r.billNo)}</button>`, sort: r => Number(r.billNo) || 0 },
+          { key: 'invoiceDate', label: 'Invoice date', text: r => dmy(r.invoiceDate), sort: r => r.invoiceDate || '' },
+          { key: 'dueDate', label: 'Due date', text: r => dmy(r.dueDate), sort: r => r.dueDate || '' },
+          { key: 'total', label: 'Total', num: true, text: r => inr(r.total) },
+          { key: 'paid', label: 'Reported', num: true, text: r => inr(r.paid) },
+          { key: 'out', label: 'Outstanding', num: true, text: r => inr(outstanding(r)), sort: r => outstanding(r) },
+          { key: 'status', label: 'Status', html: r => badge(r.status), text: r => STATUS[r.status] },
+          { key: 'act', label: 'PDF', nosort: true, nocsv: true, html: r => `<button type="button" class="icon-button" data-pdf="view" data-c="${esc(c.id)}" data-m="${esc(r.month)}" data-b="${esc(r.billNo)}" aria-label="View bill ${esc(r.billNo)}">${ico('eye')}</button><button type="button" class="icon-button" data-pdf="download" data-c="${esc(c.id)}" data-m="${esc(r.month)}" data-b="${esc(r.billNo)}" aria-label="Download bill ${esc(r.billNo)}">${ico('download')}</button>` },
+        ],
+      });
+      bt.setRows(b);
+      const pt = new UI.DataTable($('#h-pays'), {
+        title: 'Payments logged', exportName: 'payments_' + c.id, selectable: true, rowId: r => r.id, sortKey: 'ts', sortDir: 'desc', emptyText: 'No payments logged for this entity yet.',
+        columns: [
+          { key: 'ts', label: 'Submitted', text: r => dmyt(r.ts), sort: r => r.ts },
+          { key: 'label', label: 'Bill month', sort: r => r.month },
+          { key: 'billNo', label: 'Bill no.', sort: r => Number(r.billNo) || 0 },
+          { key: 'date', label: 'Payment date', text: r => dmy(r.date), sort: r => r.date },
+          { key: 'amount', label: 'Amount', num: true, text: r => inr(r.amount) },
+          { key: 'utr', label: 'UTR', cls: 'mono' },
+        ].concat(BOOT.admin ? [{ key: 'remarks', label: 'Remarks' }] : []),
+      });
+      pt.setRows(data.payments);
+    });
+    // bill details pop-up: details + PDF + payments logged against that bill
+    out.addEventListener('click', e => {
+      const d = e.target.closest('[data-detail]'); if (!d || !data) return;
+      const b = data.bills.find(x => x.month + '|' + x.billNo === d.dataset.detail);
+      const pays = data.payments.filter(p => p.month === b.month && p.billNo === b.billNo);
+      UI.modal(`Bill ${b.billNo} · ${b.label}`, `
+        <div class="result"><span class="file-ico">PDF</span><div class="result-main"><b>${esc(b.file)}</b><small>${esc(cur.name)}</small></div>${pdfButtons(cur.id, b)}</div>
+        ${billDetails(b)}
+        <h4>Payments logged for this bill</h4>
+        ${pays.length ? `<div class="table-wrap"><table class="tbl" style="min-width:520px"><thead><tr><th>Submitted</th><th>Payment date</th><th class="num">Amount</th><th>UTR</th>${BOOT.admin ? '<th>Remarks</th>' : ''}</tr></thead><tbody>
+          ${pays.map(p => `<tr><td>${dmyt(p.ts)}</td><td>${dmy(p.date)}</td><td class="num">${inr(p.amount)}</td><td class="mono">${esc(p.utr)}</td>${BOOT.admin ? `<td>${esc(p.remarks || '')}</td>` : ''}</tr>`).join('')}</tbody></table></div>`
+          : '<p class="muted" style="margin:0 1.4rem">No payment logged yet.</p>'}`);
+    });
+  }
+
+  // =====================================================================
+  // Raise Ticket (next step) and Admin
+  // =====================================================================
+  const vTicket = () => `
+  <section class="view stack" id="v-ticket" aria-labelledby="h-tk">
+    <div class="page-head"><h2 id="h-tk">Raise a ticket</h2><p>Tell the billing section what is wrong; we reply by e-mail.</p></div>
+    <div class="empty">${ico('tool')}<p>This page is being built. Please check again soon.</p></div>
+  </section>`;
+
+  const vAdmin = () => !BOOT.admin ? '' : `
+  <section class="view stack" id="v-admin" aria-labelledby="h-adm">
+    <div class="page-head"><h2 id="h-adm">Admin panel</h2><p>Visible only when signed in as the portal account. Full payment details (UTR, remarks) are shown on Update Payment and Billing History.</p></div>
+    <div class="panel pad stack">
+      <h3 style="margin:0">Data folder</h3>
+      <div class="form-grid">
+        <div class="field full"><label for="a-folder">Drive folder ID of "LDC Portal Data"</label>
+          <input id="a-folder" class="input mono" autocomplete="off" placeholder="Copy from the address bar: drive.google.com/drive/folders/<ID>">
+          <span class="hint" id="a-folder-hint"></span></div>
+      </div>
+      <div class="form-foot" style="margin-top:0">
+        <button type="button" class="button ghost sm" id="a-rebuild">${ico('tool')} Rebuild payment index</button>
+        <button type="button" class="button ghost sm" id="a-reload">${ico('refresh')} Reload data (after an export)</button>
+        <button type="button" class="button sm" id="a-save">${ico('check')} Save folder</button>
+      </div>
+    </div>
+    <div class="panel"><div class="panel-head"><h3>Status</h3></div><div id="a-status" class="pad" style="padding-top:0"></div></div>
+  </section>`;
+  async function loadAdmin() {
+    const box = $('#a-status');
+    box.innerHTML = '<div class="loading-row"><span class="spinner" aria-hidden="true"></span> Checking…</div>';
+    try {
+      const s = await run('adminStatus');
+      $('#a-folder').value = s.folderId;
+      $('#a-folder-hint').textContent = s.folderName ? 'Folder found: ' + s.folderName : '';
+      box.innerHTML = s.problem ? `<div class="note">${ico('alert')}<div><p>${esc(s.problem)}</p></div></div>` : !s.folderId ? '<p class="muted">No folder set yet.</p>' :
+        `<dl class="kv" style="padding:0"><div><dt>Export made</dt><dd>${dmyt(s.generated)}</dd></div><div><dt>Months</dt><dd>${s.months}</dd></div><div><dt>Consumers</dt><dd>${s.consumers}</dd></div><div><dt>Payments logged</dt><dd>${s.payments}</dd></div></dl>`;
+    } catch (e) { box.innerHTML = `<div class="note">${ico('alert')}<div><p>${esc(errText(e))}</p></div></div>`; }
+  }
+  function bindAdmin() {
+    if (!BOOT.admin) return;
+    $('#a-save').addEventListener('click', async e => {
+      try { const n = await busy(e.currentTarget, run('adminSetFolder', $('#a-folder').value)); toast('Folder saved', ' ' + n + ' - reloading'); setTimeout(() => location.reload(), 900); }
+      catch (err) { toast('Not saved', ' ' + errText(err), 'err'); }
+    });
+    $('#a-reload').addEventListener('click', async e => {
+      try { await busy(e.currentTarget, run('adminReload')); toast('Cache cleared', ' reloading'); setTimeout(() => location.reload(), 900); }
+      catch (err) { toast('Failed', ' ' + errText(err), 'err'); }
+    });
+    $('#a-rebuild').addEventListener('click', async e => {
+      try { const n = await busy(e.currentTarget, run('adminRebuildIndexes')); toast('Index rebuilt', ` ${n} payments`); loadAdmin(); }
+      catch (err) { toast('Failed', ' ' + errText(err), 'err'); }
+    });
+  }
+
+  // =====================================================================
+  // Footer and start
+  // =====================================================================
+  function renderFooter() {
+    $('#footer').innerHTML = `<div class="footer-inner">
+      <div><h4>${ORG.name}</h4><p>${ico('pin')} ${ORG.addr}</p><p>${ico('globe')} <a href="#dashboard">${ORG.web}</a></p><p>${ico('mail')} <a href="mailto:${ORG.mail}" target="_blank" rel="noopener">${ORG.mail}</a></p></div>
+      <div><h4>Quick links</h4>${NAV.map(([k, l]) => `<p><a href="#${k}">${l}</a></p>`).join('')}</div>
+      <div><h4>Information</h4><p>CIN: ${ORG.cin}</p><p>PAN: ${ORG.pan}</p><p>GSTIN: ${ORG.gstin}</p><p class="muted-f">For technical help with this portal, contact the Establishment Section.</p></div>
+    </div>
+    <div class="footer-bottom">&copy; ${new Date().getFullYear()} ${ORG.name}. All rights reserved. &middot; Designed &amp; developed by Establishment / LDC Billing Section, UPSLDC</div>`;
+  }
+
+  async function start() {
+    UI.injectSprite();
+    $$('.brand-mark').forEach(b => { b.innerHTML = ico('zap'); });
+    document.body.insertAdjacentHTML('beforeend', '<div class="toasts" id="toasts" role="status" aria-live="polite"></div>');
+    UI.initTheme();
+    renderFooter();
+    $('#app').innerHTML = '<div class="panel loading-row" style="margin-top:2rem"><span class="spinner" aria-hidden="true"></span> Loading portal…</div>';
+    const EMPTY = { ready: false, admin: false, months: [], consumers: [], recent: [], payCount: 0, payTotal: 0, billsReported: 0 };
+    try { BOOT = Object.assign({}, EMPTY, await run('getBoot')); }
+    catch (e) { BOOT = Object.assign({}, EMPTY, { message: errText(e) }); }
+    if (!BOOT.months.length) BOOT.ready = false; // no month exported yet = nothing to show
+    renderNav();
+    $('#app').innerHTML = vDashboard() + vDownload() + vPayment() + vHistory() + vTicket() + vAdmin();
+    bindDownload(); bindPayment(); bindHistory(); bindAdmin();
+    window.addEventListener('hashchange', () => show(location.hash.slice(1)));
+    show(location.hash.slice(1));
+    dashboardCount();
+  }
+  start();
+})();
+</script>

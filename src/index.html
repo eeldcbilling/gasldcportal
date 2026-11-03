@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<base target="_self">
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<?!= include('css'); ?>
+<?!= include('cssApp'); ?>
+</head>
+<body data-final>
+<a class="skip" href="#app">Skip to content</a>
+<header class="top">
+  <div class="top-row">
+    <a class="brand" href="#dashboard"><span class="brand-mark"></span><span><strong>U P SLDC Limited</strong><small>A U.P. Govt. Undertaking &middot; LDC Billing Portal</small></span></a>
+    <div class="ids">CIN U40106UP2022SGC169330 &middot; PAN AADCU1676Q<br>GSTIN 09AADCU1676QIZK &middot; eeldcbilling@upsldc.org</div>
+    <button type="button" class="icon-button" id="themeBtn" aria-label="Switch theme"></button>
+  </div>
+  <div class="nav-row"><nav class="nav" id="nav" aria-label="Main"></nav></div>
+</header>
+<main id="app" class="container"></main>
+<footer id="footer" class="footer"></footer>
+<?!= include('js'); ?>
+<?!= include('jsPages'); ?>
+</body>
+</html>

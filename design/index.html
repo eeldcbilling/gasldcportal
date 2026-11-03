@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UPSLDC Billing Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="theme.css">
+<style>
+/* ===== FINAL DESIGN: Minimal layout + Teal & Amber theme + micro-interactions + click ripple ===== */
+:root {
+  color-scheme: light;
+  --font: "Inter", system-ui, "Segoe UI", sans-serif;
+  --bg: #FAFAFA;
+  --surface: #FFFFFF;
+  --surface-solid: #FFFFFF;
+  --surface-2: #F4F4F5;
+  --text: #18181B;
+  --muted: #63636B;
+  --border: #E4E4E7;
+  --input-bg: #FFFFFF;
+  --input-border: #D4D4D8;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.1);
+  --row-hover: #F4F4F5;
+  --chip-on: rgba(var(--p-rgb), 0.10);
+  --link: var(--p-text);
+  --ok-text: #15803D;
+  --err-text: #B91C1C;
+  --warn-text: #92400E;
+  --violet-text: var(--a-text);
+  --note-bg: #FFFBEB;
+  --note-border: #FDE68A;
+  --toast-bg: #18181B;
+  --toast-text: #FAFAFA;
+  --radius: .9rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #09090B; --surface: #111113; --surface-solid: #18181B; --surface-2: #1C1C20;
+    --text: #FAFAFA; --muted: #A1A1AA; --border: #27272A;
+    --input-bg: #111113; --input-border: #3F3F46;
+    --shadow-sm: none; --shadow-lg: 0 20px 40px rgba(0,0,0,.5);
+    --row-hover: #18181B; --chip-on: rgba(var(--p-rgb), .16);
+    --link: var(--p-text-dark); --ok-text: #4ADE80; --err-text: #F87171; --warn-text: #FBBF24; --violet-text: var(--a-text-dark);
+    --note-bg: rgba(245,158,11,.08); --note-border: rgba(245,158,11,.25);
+    --toast-bg: #FAFAFA; --toast-text: #18181B;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #09090B; --surface: #111113; --surface-solid: #18181B; --surface-2: #1C1C20;
+  --text: #FAFAFA; --muted: #A1A1AA; --border: #27272A;
+  --input-bg: #111113; --input-border: #3F3F46;
+  --shadow-sm: none; --shadow-lg: 0 20px 40px rgba(0,0,0,.5);
+  --row-hover: #18181B; --chip-on: rgba(var(--p-rgb), .16);
+  --link: var(--p-text-dark); --ok-text: #4ADE80; --err-text: #F87171; --warn-text: #FBBF24; --violet-text: var(--a-text-dark);
+  --note-bg: rgba(245,158,11,.08); --note-border: rgba(245,158,11,.25);
+  --toast-bg: #FAFAFA; --toast-text: #18181B;
+}
+
+/* minimal: quieter decorative pieces */
+.hero { background: var(--surface); }
+.quick-ico { background: var(--chip-on); color: var(--link); }
+.quick:hover .quick-ico { background: var(--mi-indigo-strong); color: #fff; }
+.mb-logo { background: var(--mi-indigo-strong); }
+.page-head h2 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
+.hero h1 { font-weight: 800; letter-spacing: -0.03em; }
+
+/* header */
+.top {
+  position: sticky; top: 0; z-index: 50;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.top-row { max-width: 1120px; margin: 0 auto; padding: .9rem 1.25rem .2rem; display: flex; align-items: center; gap: 1rem; }
+.brand { display: flex; align-items: center; gap: .7rem; text-decoration: none; color: var(--text); margin-right: auto; }
+.brand-mark { width: 2.1rem; height: 2.1rem; border-radius: .6rem; display: grid; place-items: center; color: #fff; background: var(--text); }
+:root[data-theme="dark"] .brand-mark { color: #111; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .brand-mark { color: #111; } }
+.brand strong { display: block; font-size: .98rem; font-weight: 700; }
+.brand small { display: block; font-size: .74rem; color: var(--muted); }
+.ids { font-size: .72rem; color: var(--muted); text-align: right; line-height: 1.4; }
+.nav-row { max-width: 1120px; margin: 0 auto; padding: 0 1.25rem; }
+.nav { display: flex; gap: 1.6rem; overflow-x: auto; scrollbar-width: none; }
+.nav-link {
+  position: relative; display: inline-flex; align-items: center; gap: .45rem;
+  padding: .85rem 0; white-space: nowrap;
+  color: var(--muted); text-decoration: none; font-weight: 500; font-size: .9rem;
+  transition: color var(--mi-fast) ease;
+}
+.nav-link .ico { width: 1rem; height: 1rem; }
+.nav-link::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--mi-indigo-strong); transform: scaleX(0); transition: transform var(--mi-medium) ease; transform-origin: left; }
+.nav-link:hover { color: var(--text); }
+.nav-link:hover::after { transform: scaleX(.4); }
+.nav-link[aria-current="page"] { color: var(--text); font-weight: 600; }
+.nav-link[aria-current="page"]::after { transform: scaleX(1); }
+.nav-link.admin { margin-left: auto; color: var(--violet-text); }
+.menu-btn { display: none; }
+
+main.container { max-width: 1120px; margin: 2.2rem auto 3rem; padding: 0 1.25rem; }
+
+/* footer */
+.footer { border-top: 1px solid var(--border); margin-top: 3rem; }
+.footer-inner { max-width: 1120px; margin: 0 auto; padding: 2.2rem 1.25rem; display: grid; grid-template-columns: 1.4fr 1fr 1.2fr; gap: 2rem; font-size: .86rem; color: var(--muted); }
+.footer h4 { margin: 0 0 .8rem; font-size: .8rem; font-weight: 600; color: var(--text); }
+.footer p { margin: 0 0 .45rem; display: flex; gap: .5rem; align-items: flex-start; }
+.footer a { color: var(--muted); text-decoration: none; }
+.footer a:hover { color: var(--text); text-decoration: underline; }
+.footer-bottom { max-width: 1120px; margin: 0 auto; padding: 1rem 1.25rem 4.5rem; border-top: 1px solid var(--border); font-size: .78rem; color: var(--muted); }
+
+@media (max-width: 860px) {
+  .ids { display: none; }
+}
+@media (max-width: 720px) {
+  .footer-inner { grid-template-columns: 1fr; }
+  .nav-link.admin { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .nav-link::after { transition: none; } }
+</style>
+</head>
+<body data-final>
+<a class="skip" href="#app">Skip to content</a>
+<header class="top">
+  <div class="top-row">
+    <a class="brand" href="#dashboard"><span class="brand-mark"></span><span><strong>U P SLDC Limited</strong><small>A U.P. Govt. Undertaking &middot; LDC Billing Portal</small></span></a>
+    <div class="ids">CIN U40106UP2022SGC169330 &middot; PAN AADCU1676Q<br>GSTIN 09AADCU1676QIZK &middot; eeldcbilling@upsldc.org</div>
+    <button type="button" class="icon-button" id="themeBtn" aria-label="Switch theme"></button>
+  </div>
+  <div class="nav-row"><nav class="nav" id="nav" aria-label="Main"></nav></div>
+</header>
+<main id="app" class="container"></main>
+<footer id="footer" class="footer"></footer>
+<script src="common.js"></script>
+</body>
+</html>

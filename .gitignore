@@ -1,0 +1,15 @@
+# Never commit data or credentials (CLAUDE.md rule 6)
+*.pdf
+*.xlsx
+*.xls
+*.csv
+data/
+*.json
+!appsscript.json
+!.clasp.json
+!package.json
+.clasprc.json
+*.7z
+*.zip
+*.rar
+node_modules/
